@@ -225,7 +225,7 @@ def detect_target() -> str:
 
 def _stream_download(url: str, dest: Path):
     """Baixa com progresso simples no terminal (MB)."""
-    print(f"  → baixando {url}")
+    print(f"  -> baixando {url}")
     req = urllib.request.Request(url, headers={"User-Agent": "fetch_binaries/1.0"})
     with urllib.request.urlopen(req, timeout=60) as r:
         total = int(r.headers.get("Content-Length", 0))
@@ -440,9 +440,9 @@ def fetch_target(target_name: str, *, force: bool = False, pin: bool = False):
         if final.exists() and not force:
             size_mb = _tree_size_mb(final)
             if size_mb >= resolver.min_size_mb:
-                print(f"  ✓ {target_name}/{bin_name} já presente ({size_mb}MB)")
+                print(f"  [OK] {target_name}/{bin_name} já presente ({size_mb}MB)")
                 continue
-            print(f"  ✗ {target_name}/{bin_name} pequeno demais ({size_mb}MB) — refazendo")
+            print(f"  [!] {target_name}/{bin_name} pequeno demais ({size_mb}MB) — refazendo")
 
         print(f"[{target_name}/{bin_name}] resolvendo URL...")
         url = resolver.url_resolver()
@@ -481,7 +481,7 @@ def fetch_target(target_name: str, *, force: bool = False, pin: bool = False):
 
     if pin:
         _save_lock(lock)
-        print(f"  → lockfile gravado em {LOCKFILE}")
+        print(f"  -> lockfile gravado em {LOCKFILE}")
 
 
 def main():

@@ -34,6 +34,12 @@ jobs:
 
     runs-on: ${{ matrix.os }}
 
+    env:
+      # Força stdout/stderr do Python em UTF-8. No Windows o default é cp1252
+      # e quebra qualquer print() com acento ou símbolo Unicode (→, ✓, ç, á…).
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: "utf-8"
+
     steps:
       - uses: actions/checkout@v4
 

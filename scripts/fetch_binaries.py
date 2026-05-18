@@ -101,24 +101,52 @@ def _gyan_ffmpeg_win_url() -> str:
 
 
 def _github_release_asset(repo: str, pattern: re.Pattern) -> str:
-    """Resolve o URL de um asset de github.com/<repo>/releases/latest cujo nome bate o regex.
+    """Resolve o URL de um asset cujo nome bate o regex.
+
+    Estratégia: tenta `releases/latest` primeiro; se não houver match, percorre
+    as releases mais recentes (até 5 no total) procurando a primeira que tenha
+    um asset compatível. Necessário porque alguns repos (eko5624/mpv-mac) às
+    vezes publicam uma release com builds incompletos (ex.: só x86_64 sem
+    arm64) — a release anterior tinha tudo.
 
     Usa GITHUB_TOKEN do env se presente — necessário em CI porque o runner do
     GitHub Actions tem IP compartilhado e o rate limit anônimo (60 req/h) zera
     rápido. Com token autenticado o limite é 1000 req/h.
     """
-    api = f"https://api.github.com/repos/{repo}/releases/latest"
     headers = {"Accept": "application/vnd.github+json"}
     token = os.environ.get("GITHUB_TOKEN")
     if token:
         headers["Authorization"] = f"Bearer {token}"
-    req = urllib.request.Request(api, headers=headers)
+
+    def _match_in(release: dict) -> str | None:
+        for asset in release.get("assets", []):
+            if pattern.search(asset["name"]):
+                return asset["browser_download_url"]
+        return None
+
+    # 1) Tenta a release marcada como "latest" pelo GitHub.
+    api_latest = f"https://api.github.com/repos/{repo}/releases/latest"
+    req = urllib.request.Request(api_latest, headers=headers)
     with urllib.request.urlopen(req, timeout=30) as r:
-        data = json.loads(r.read())
-    for asset in data.get("assets", []):
-        if pattern.search(asset["name"]):
-            return asset["browser_download_url"]
-    raise RuntimeError(f"Nenhum asset em {repo} bate o padrão {pattern.pattern}")
+        latest = json.loads(r.read())
+    url = _match_in(latest)
+    if url:
+        return url
+
+    # 2) Fallback: percorre as 5 releases mais recentes (incluindo pré-releases).
+    api_all = f"https://api.github.com/repos/{repo}/releases?per_page=5"
+    req = urllib.request.Request(api_all, headers=headers)
+    with urllib.request.urlopen(req, timeout=30) as r:
+        releases = json.loads(r.read())
+    for release in releases:
+        url = _match_in(release)
+        if url:
+            print(f"  [fallback] usando release {release.get('tag_name')} de {repo} "
+                  f"(latest não tem asset com padrão {pattern.pattern})")
+            return url
+
+    raise RuntimeError(f"Nenhum asset em {repo} bate o padrão {pattern.pattern} "
+                       f"(checadas latest + 5 releases anteriores)")
 
 
 def _shinchiro_mpv_win() -> str:

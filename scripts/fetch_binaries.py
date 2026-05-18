@@ -101,9 +101,18 @@ def _gyan_ffmpeg_win_url() -> str:
 
 
 def _github_release_asset(repo: str, pattern: re.Pattern) -> str:
-    """Resolve o URL de um asset de github.com/<repo>/releases/latest cujo nome bate o regex."""
+    """Resolve o URL de um asset de github.com/<repo>/releases/latest cujo nome bate o regex.
+
+    Usa GITHUB_TOKEN do env se presente — necessário em CI porque o runner do
+    GitHub Actions tem IP compartilhado e o rate limit anônimo (60 req/h) zera
+    rápido. Com token autenticado o limite é 1000 req/h.
+    """
     api = f"https://api.github.com/repos/{repo}/releases/latest"
-    req = urllib.request.Request(api, headers={"Accept": "application/vnd.github+json"})
+    headers = {"Accept": "application/vnd.github+json"}
+    token = os.environ.get("GITHUB_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(api, headers=headers)
     with urllib.request.urlopen(req, timeout=30) as r:
         data = json.loads(r.read())
     for asset in data.get("assets", []):

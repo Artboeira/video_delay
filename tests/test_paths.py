@@ -27,25 +27,27 @@ class UserDataDirTests(unittest.TestCase):
         self.assertTrue((result / "tests").is_dir())
 
     def test_frozen_mac_uses_application_support(self):
+        # `as_posix()` normaliza separadores para `/` em qualquer SO, isolando o
+        # teste do separador nativo do runner (Windows usa `\`).
         with patch.object(paths, "is_frozen", return_value=True), \
              patch.object(sys, "platform", "darwin"):
             result = paths.user_data_dir()
-            self.assertIn("Library/Application Support/VideoDelay", str(result))
+            self.assertIn("Library/Application Support/VideoDelay", result.as_posix())
 
     def test_frozen_windows_uses_appdata(self):
         with patch.object(paths, "is_frozen", return_value=True), \
              patch.object(sys, "platform", "win32"), \
              patch.dict(os.environ, {"APPDATA": r"C:\Users\foo\AppData\Roaming"}):
             result = paths.user_data_dir()
-            self.assertTrue(str(result).endswith("VideoDelay"))
-            self.assertIn("AppData", str(result))
+            self.assertTrue(result.name == "VideoDelay")
+            self.assertIn("AppData", result.as_posix())
 
     def test_frozen_linux_uses_xdg(self):
         with patch.object(paths, "is_frozen", return_value=True), \
              patch.object(sys, "platform", "linux"), \
              patch.dict(os.environ, {"XDG_CONFIG_HOME": "/home/foo/.config"}):
             result = paths.user_data_dir()
-            self.assertEqual(str(result), "/home/foo/.config/VideoDelay")
+            self.assertEqual(result.as_posix(), "/home/foo/.config/VideoDelay")
 
 
 class DerivedPathsTests(unittest.TestCase):

@@ -148,8 +148,10 @@ class MpvCommandTests(unittest.TestCase):
     def test_first_segment_is_last_positional_arg(self):
         """MPV interpreta o último arg posicional como o arquivo a tocar."""
         player = PlayerManager(make_config())
-        cmd = player._build_mpv_cmd(Path("/tmp/specific.ts"))
-        self.assertEqual(cmd[-1], "/tmp/specific.ts")
+        seg = Path("/tmp/specific.ts")
+        cmd = player._build_mpv_cmd(seg)
+        # Compara como Path para neutralizar separador POSIX vs Windows
+        self.assertEqual(Path(cmd[-1]), seg)
 
 
 class DelayControlTests(unittest.TestCase):

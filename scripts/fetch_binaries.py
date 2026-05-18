@@ -367,20 +367,34 @@ def _extract_from_zip(archive: Path, member_pattern, dest_dir: Path) -> Path:
     raise RuntimeError(f"Membro {member_pattern} não encontrado em {archive.name}")
 
 
+def _find_7z_cli() -> str | None:
+    """Localiza o binário `7z` (CLI). Procura no PATH e nos locais padrão do Windows."""
+    found = shutil.which("7z") or shutil.which("7za")
+    if found:
+        return found
+    # GitHub Actions windows-2022 traz 7-Zip pré-instalado mas nem sempre no PATH
+    for candidate in (
+        r"C:\Program Files\7-Zip\7z.exe",
+        r"C:\Program Files (x86)\7-Zip\7z.exe",
+    ):
+        if Path(candidate).exists():
+            return candidate
+    return None
+
+
 def _extract_from_7z(archive: Path, member_pattern, dest_dir: Path) -> Path:
-    """Extrai usando py7zr (pip install py7zr) ou comando `7z` do SO."""
-    try:
-        import py7zr  # type: ignore
-    except ImportError:
-        # Fallback: usa o binário `7z` do SO se presente.
-        if not shutil.which("7z"):
-            raise RuntimeError(
-                "Para extrair .7z instale py7zr (`pip install py7zr`) "
-                "ou tenha `7z` no PATH (brew install p7zip / choco install 7zip)."
-            )
-        import subprocess
+    """
+    Extrai .7z preferindo a CLI `7z` (suporta todos os filtros, incluindo BCJ2
+    usado por builds modernos do mpv para Windows). Cai em py7zr só se a CLI
+    não estiver disponível — py7zr não implementa BCJ2 e quebra em vários
+    artefatos do shinchiro/mpv-winbuild-cmake.
+    """
+    import subprocess
+
+    cli = _find_7z_cli()
+    if cli is not None:
         with tempfile.TemporaryDirectory() as td:
-            subprocess.check_call(["7z", "x", "-y", f"-o{td}", str(archive)],
+            subprocess.check_call([cli, "x", "-y", f"-o{td}", str(archive)],
                                   stdout=subprocess.DEVNULL)
             for root, _, files in os.walk(td):
                 for f in files:
@@ -389,10 +403,21 @@ def _extract_from_7z(archive: Path, member_pattern, dest_dir: Path) -> Path:
                         src = Path(root) / f
                         dst = dest_dir / src.name
                         shutil.move(str(src), str(dst))
-                        dst.chmod(0o755)
+                        try:
+                            dst.chmod(0o755)
+                        except OSError:
+                            pass  # Windows ignora chmod
                         return dst
         raise RuntimeError(f"Membro {member_pattern} não encontrado em {archive.name}")
 
+    # Fallback py7zr — funciona para 7z sem filtros exóticos
+    try:
+        import py7zr  # type: ignore
+    except ImportError:
+        raise RuntimeError(
+            "Para extrair .7z é preciso ter `7z` no PATH "
+            "(choco install 7zip / brew install p7zip) ou `pip install py7zr`."
+        )
     with py7zr.SevenZipFile(archive, mode="r") as z:
         names = z.getnames()
         for n in names:
@@ -402,7 +427,10 @@ def _extract_from_7z(archive: Path, member_pattern, dest_dir: Path) -> Path:
                 dst = dest_dir / Path(n).name
                 if src != dst:
                     shutil.move(str(src), str(dst))
-                dst.chmod(0o755)
+                try:
+                    dst.chmod(0o755)
+                except OSError:
+                    pass
                 return dst
         raise RuntimeError(f"Membro {member_pattern} não encontrado em {archive.name}")
 

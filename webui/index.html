@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Video Delay — Configuração · Estúdio AB</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" href="assets/symbol.svg" type="image/svg+xml" />
+</head>
+<body>
+  <main class="page">
+
+    <!-- ── Hairline rule top ─────────────────────────────────────── -->
+    <header class="rule rule--top">
+      <span class="glyph" id="glyph-top" aria-label="Estúdio AB"></span>
+      <span class="rule__center">Video Delay System</span>
+      <span>2026 · 01</span>
+    </header>
+
+    <!-- ── Body ──────────────────────────────────────────────────── -->
+    <div>
+
+      <!-- WIZARD — first-run guided setup. Mostrado quando setup_status.complete=false -->
+      <section id="wizard" class="wizard" hidden>
+        <div class="wizard__steps-rail">
+          <span class="wizard__step-pip is-active" data-step="1"></span>
+          <span class="wizard__step-pip" data-step="2"></span>
+          <span class="wizard__step-pip" data-step="3"></span>
+          <span class="wizard__step-pip" data-step="4"></span>
+        </div>
+
+        <!-- Step 1 — boas-vindas -->
+        <div class="wizard__step is-active" data-step="1">
+          <p class="wizard__eyebrow">Configuração · 1 de 4</p>
+          <h1 class="wizard__title">Vamos configurar o seu Video Delay.</h1>
+          <p class="wizard__lede">
+            Em quatro passos você escolhe a placa de captura, o monitor de saída
+            e o tempo de delay. Você pode mudar tudo depois a qualquer momento.
+          </p>
+          <div class="wizard__actions">
+            <button class="btn btn--primary" data-action="next">Começar</button>
+          </div>
+        </div>
+
+        <!-- Step 2 — placa de captura -->
+        <div class="wizard__step" data-step="2">
+          <p class="wizard__eyebrow">Configuração · 2 de 4</p>
+          <h1 class="wizard__title">Qual é a fonte do vídeo?</h1>
+          <p class="wizard__lede">
+            Selecione a placa de captura ligada ao computador. Se ainda não
+            tiver hardware conectado, use o modo de teste para validar tudo
+            com uma fonte sintética.
+          </p>
+
+          <div id="wizard-device-list" class="monitor-list">
+            <!-- preenchido em JS -->
+          </div>
+
+          <label class="toggle" style="margin-top: 24px;">
+            <input class="toggle__input" type="checkbox" id="wizard-test-mode" />
+            <span class="toggle__track"></span>
+            <span class="field__hint">Usar modo de teste (sem placa)</span>
+          </label>
+
+          <div class="wizard__actions">
+            <button class="btn" data-action="back">Voltar</button>
+            <button class="btn btn--primary" data-action="next">Avançar</button>
+          </div>
+        </div>
+
+        <!-- Step 3 — monitor -->
+        <div class="wizard__step" data-step="3">
+          <p class="wizard__eyebrow">Configuração · 3 de 4</p>
+          <h1 class="wizard__title">Qual é a tela do público?</h1>
+          <p class="wizard__lede">
+            O vídeo com delay aparece em tela cheia no monitor escolhido.
+            O painel pode ficar em outro.
+          </p>
+
+          <div id="wizard-monitor-list" class="monitor-list">
+            <!-- preenchido em JS -->
+          </div>
+
+          <div class="wizard__actions">
+            <button class="btn" data-action="back">Voltar</button>
+            <button class="btn btn--primary" data-action="next">Avançar</button>
+          </div>
+        </div>
+
+        <!-- Step 4 — delay + iniciar -->
+        <div class="wizard__step" data-step="4">
+          <p class="wizard__eyebrow">Configuração · 4 de 4</p>
+          <h1 class="wizard__title">Quanto tempo de atraso?</h1>
+          <p class="wizard__lede">
+            O sistema mostra o vídeo com este tempo de defasagem. Você pode
+            ajustar a qualquer momento depois.
+          </p>
+
+          <div class="field">
+            <input class="range" type="range" id="wizard-delay" min="10" max="600" step="5" value="120" />
+            <div class="delay-readout">
+              <span id="wizard-delay-readout">2min 00s</span>
+              <small id="wizard-delay-raw">120 segundos</small>
+            </div>
+          </div>
+
+          <div class="wizard__actions">
+            <button class="btn" data-action="back">Voltar</button>
+            <button class="btn btn--primary" id="wizard-finish">Iniciar sistema</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- DASHBOARD — painel normal pós-setup -->
+      <section id="dashboard" hidden>
+
+      <section class="hero">
+        <div>
+          <h1>Painel de controle</h1>
+          <p>Ajuste o delay, o monitor de saída e a qualidade da captura.
+             As mudanças são aplicadas em tempo real — o sistema continua
+             rodando enquanto você configura.</p>
+        </div>
+        <span class="hero__badge" id="hero-state" data-state="warn">Conectando…</span>
+      </section>
+
+      <!-- Status -->
+      <section class="status-strip">
+        <div class="status-cell">
+          <div class="status-cell__label">Captura</div>
+          <div class="status-cell__value status-cell__value--mono" id="st-capture">—</div>
+        </div>
+        <div class="status-cell">
+          <div class="status-cell__label">Playback</div>
+          <div class="status-cell__value status-cell__value--mono" id="st-player">—</div>
+        </div>
+        <div class="status-cell status-cell--accent">
+          <div class="status-cell__label">Buffer</div>
+          <div class="status-cell__value status-cell__value--mono" id="st-buffer">0%</div>
+          <div class="buffer-bar"><div class="buffer-bar__fill" id="st-buffer-fill"></div></div>
+        </div>
+        <div class="status-cell">
+          <div class="status-cell__label">Segmentos limpos</div>
+          <div class="status-cell__value status-cell__value--mono" id="st-cleaned">0</div>
+        </div>
+      </section>
+
+      <!-- Delay -->
+      <section class="section">
+        <h2 class="section__title">Delay</h2>
+        <p class="section__hint">Quantos segundos a tela mostra atrás do tempo real. Mínimo 10s, passo de 1s.</p>
+
+        <div class="field">
+          <div class="field__row">
+            <input class="range" type="range" id="delay-range" min="10" max="600" step="1" value="120" />
+          </div>
+          <div class="delay-readout">
+            <span id="delay-readout">2min 00s</span>
+            <small id="delay-readout-raw">120 segundos</small>
+          </div>
+        </div>
+      </section>
+
+      <!-- Monitor -->
+      <section class="section">
+        <h2 class="section__title">Monitor de saída</h2>
+        <p class="section__hint">Escolha em qual tela o vídeo fullscreen aparece. A janela do painel pode ficar em outra.</p>
+
+        <div class="monitor-list" id="monitor-list">
+          <!-- preenchido em JS -->
+        </div>
+      </section>
+
+      <!-- Captura -->
+      <section class="section">
+        <h2 class="section__title">Captura</h2>
+        <p class="section__hint">Fonte do vídeo e qualidade do encoding.</p>
+
+        <div class="grid">
+
+          <div class="field">
+            <label class="field__label" for="capture-device">Placa de captura (Windows)</label>
+            <span class="field__hint">Nome exato do dispositivo DirectShow. Em modo de teste é ignorado.</span>
+            <input class="input" id="capture-device" type="text" placeholder="Elgato HD60 S+" />
+          </div>
+
+          <div class="field">
+            <label class="field__label">Modo de teste</label>
+            <span class="field__hint">Usa fonte sintética com clock visível — útil para verificar o delay sem placa.</span>
+            <label class="toggle">
+              <input class="toggle__input" type="checkbox" id="test-mode" />
+              <span class="toggle__track"></span>
+              <span class="field__hint">Ativar testsrc2</span>
+            </label>
+          </div>
+
+          <div class="field">
+            <label class="field__label" for="preset">Preset do encoder</label>
+            <span class="field__hint">Quanto mais rápido, menos CPU. <code>ultrafast</code> é o padrão.</span>
+            <select class="select" id="preset">
+              <option value="ultrafast">ultrafast</option>
+              <option value="superfast">superfast</option>
+              <option value="veryfast">veryfast</option>
+              <option value="faster">faster</option>
+              <option value="fast">fast</option>
+              <option value="medium">medium</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label class="field__label" for="crf">CRF (qualidade)</label>
+            <span class="field__hint">0 = lossless, 51 = ruim. 18 é quase imperceptível, 23 é eficiente.</span>
+            <input class="input" id="crf" type="number" min="0" max="51" value="18" />
+          </div>
+
+          <div class="field">
+            <label class="field__label" for="segment-duration">Duração do segmento (s)</label>
+            <span class="field__hint">Bloco mínimo de gravação. 5s é o padrão; valores menores aumentam I/O.</span>
+            <input class="input" id="segment-duration" type="number" min="1" max="30" value="5" />
+          </div>
+
+          <div class="field">
+            <label class="field__label" for="max-age">Idade máxima do segmento (s)</label>
+            <span class="field__hint">Segmentos mais velhos que isso são apagados. Precisa ser maior que o delay.</span>
+            <input class="input" id="max-age" type="number" min="60" max="7200" value="600" />
+          </div>
+
+        </div>
+      </section>
+
+      <!-- Action bar -->
+      <div class="actions">
+        <div class="actions__note" id="save-note">Painel: <strong>P</strong> · sair: <strong>Q</strong> · reload: <strong>R</strong></div>
+        <div style="display:flex; gap:12px;">
+          <button class="btn btn--danger" id="btn-shutdown" title="Encerra o sistema inteiro">Encerrar sistema</button>
+          <button class="btn" id="btn-revert">Reverter</button>
+          <button class="btn btn--primary" id="btn-save">Salvar &amp; aplicar</button>
+        </div>
+      </div>
+
+      </section>  <!-- /#dashboard -->
+    </div>
+
+    <!-- ── Hairline rule bottom ──────────────────────────────────── -->
+    <footer class="rule rule--bottom">
+      <span class="glyph" id="glyph-bot" aria-label="Estúdio AB"></span>
+      <span class="rule__center">estudioab.io · instalações imersivas</span>
+      <span id="footer-host">localhost</span>
+    </footer>
+
+  </main>
+
+  <div class="toast" id="toast"></div>
+  <script src="logo.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

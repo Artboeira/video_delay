@@ -1,0 +1,13 @@
+{
+  "delay_seconds": 30,
+  "segment_duration": 5,
+  "capture_device": "YOUR_CAPTURE_CARD_NAME",
+  "segment_folder": "/Users/artboeira/Documents/Docs2026/estudioab/projetos/nodata/projeto_delay/video-delay/segments",
+  "max_segment_age_seconds": 600,
+  "mpv_fullscreen_monitor": 0,
+  "test_mode": true,
+  "video_quality": {
+    "preset": "veryfast",
+    "crf": 23
+  }
+}

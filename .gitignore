@@ -1,0 +1,20 @@
+# Runtime — gerados pelo app em modo dev
+segments/
+logs/
+.setup_complete
+
+# Build artifacts
+build/
+dist/
+*.spec
+__pycache__/
+*.pyc
+
+# Binarios baixados pelo scripts/fetch_binaries.py
+vendor/
+
+# Estado local
+.DS_Store
+.idea/
+.vscode/
+*.swp

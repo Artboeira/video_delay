@@ -34,6 +34,7 @@ from urllib.parse import urlparse
 from .monitors import list_monitors
 from .capture_devices import list_capture_devices
 from .paths import setup_flag_path
+from .logging_setup import log
 
 
 # Garante MIME types para fontes (alguns sistemas não trazem por padrão).
@@ -46,9 +47,25 @@ def _resolve_webui_dir() -> Path:
     """
     Resolve a pasta `webui/` tanto em execução normal (rodando do source)
     quanto empacotada via PyInstaller (`sys._MEIPASS`).
+
+    Em frozen tenta múltiplos caminhos porque a estrutura do bundle varia
+    entre plataformas e versões do PyInstaller:
+      • Mac onedir : Contents/Resources/webui  (via sys._MEIPASS)
+      • Win onedir : <exe>/_internal/webui     (via sys._MEIPASS)
+      • Win 5.x    : <exe>/webui               (legado)
+    Retorna o primeiro que contém index.html. Se nenhum existir, retorna
+    o primeiro candidato (para o erro aparecer no log do app, não na import).
     """
     if getattr(sys, "_MEIPASS", None):
-        return Path(sys._MEIPASS) / "webui"
+        candidates = [
+            Path(sys._MEIPASS) / "webui",
+            Path(sys.executable).resolve().parent / "_internal" / "webui",
+            Path(sys.executable).resolve().parent / "webui",
+        ]
+        for c in candidates:
+            if (c / "index.html").is_file():
+                return c
+        return candidates[0]
     return Path(__file__).resolve().parent.parent / "webui"
 
 
@@ -106,10 +123,12 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             target = (WEBUI_DIR / rel_path).resolve()
             target.relative_to(WEBUI_DIR.resolve())
-        except (ValueError, OSError):
+        except (ValueError, OSError) as e:
+            log.warning("static path inválido: rel=%s base=%s err=%s", rel_path, WEBUI_DIR, e)
             self.send_error(404)
             return
         if not target.is_file():
+            log.warning("static não encontrado: %s (base WEBUI_DIR=%s)", target, WEBUI_DIR)
             self.send_error(404)
             return
         ctype, _ = mimetypes.guess_type(str(target))

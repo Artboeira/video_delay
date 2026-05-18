@@ -138,8 +138,11 @@ def build_command(target: str, args) -> list[str]:
     if not args.console:
         cmd.append("--windowed")
 
-    # webui — pasta inteira (HTML/CSS/JS/fontes/assets)
-    cmd += _add_data_flag("webui", "webui")
+    # webui — pasta inteira (HTML/CSS/JS/fontes/assets).
+    # Usamos path absoluto porque path relativo com `--add-data` falhou
+    # silenciosamente no runner Windows do GitHub Actions: o PyInstaller
+    # não copiava webui/ e o app servia 404 em `/`.
+    cmd += _add_data_flag(str(ROOT / "webui"), "webui")
 
     # Binários — diferem por plataforma
     vdir = vendor_dir(target)
@@ -198,6 +201,28 @@ def patch_info_plist():
     new_content = content.replace("</dict>\n</plist>", injection + "</dict>\n</plist>")
     plist_path.write_text(new_content, encoding="utf-8")
     print("→ Info.plist patched (NSCameraUsageDescription, LSMinimumSystemVersion)")
+
+
+def verify_bundle_contents():
+    """
+    Aborta o build se o PyInstaller não copiou webui/ para o lugar certo.
+    Falha silenciosa do `--add-data` já produziu um .zip quebrado em
+    produção (404 em `/`); essa verificação é o circuito de segurança.
+    """
+    if sys.platform == "darwin":
+        webui = ROOT / "dist" / f"{APP_NAME}.app" / "Contents" / "Resources" / "webui"
+    elif sys.platform == "win32":
+        webui = ROOT / "dist" / APP_NAME / "_internal" / "webui"
+    else:
+        return
+    index = webui / "index.html"
+    if not index.is_file():
+        raise SystemExit(
+            f"Build inválido: {index} não existe.\n"
+            f"O PyInstaller --add-data não copiou a pasta webui/ para o bundle. "
+            f"Aborte o build, investigue o output do PyInstaller acima."
+        )
+    print(f"→ Bundle verificado: webui/index.html presente em {webui}")
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -320,6 +345,7 @@ def main():
     print()
 
     patch_info_plist()
+    verify_bundle_contents()
 
     if not args.skip_zip:
         out_zip = zip_distribution(target)

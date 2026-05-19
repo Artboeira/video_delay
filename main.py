@@ -121,6 +121,7 @@ DEFAULT_CONFIG = {
     "max_segment_age_seconds": 600,
     "mpv_fullscreen_monitor": 0,
     "test_mode": False,
+    "windowed_mode": False,
     "video_quality": {"preset": "ultrafast", "crf": 18},
 }
 

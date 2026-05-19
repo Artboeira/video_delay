@@ -396,71 +396,102 @@ def _extract_from_zip(archive: Path, member_pattern, dest_dir: Path) -> Path:
 
 
 def _find_7z_cli() -> str | None:
-    """Localiza o binário `7z` (CLI). Procura no PATH e nos locais padrão do Windows."""
-    found = shutil.which("7z") or shutil.which("7za")
+    """
+    Localiza um binário CLI capaz de extrair .7z (todos os filtros, incluindo
+    BCJ2 do mpv/shinchiro). Ordem de busca:
+      1. `7z`, `7za`, `7zr` no PATH
+      2. Locais padrão do 7-Zip no Windows (Program Files)
+      3. `vendor/_tools/7zr.exe` (auto-baixado de 7-zip.org no primeiro uso)
+    """
+    found = shutil.which("7z") or shutil.which("7za") or shutil.which("7zr")
     if found:
         return found
-    # GitHub Actions windows-2022 traz 7-Zip pré-instalado mas nem sempre no PATH
     for candidate in (
         r"C:\Program Files\7-Zip\7z.exe",
         r"C:\Program Files (x86)\7-Zip\7z.exe",
     ):
         if Path(candidate).exists():
             return candidate
+    if sys.platform == "win32":
+        return _ensure_7zr_windows()
     return None
+
+
+def _ensure_7zr_windows() -> str | None:
+    """
+    Baixa `7zr.exe` standalone do 7-zip.org para `vendor/_tools/` se ainda
+    não estiver lá. É a versão console autocontida do 7-Zip (~1 MB) e
+    suporta todos os filtros do formato 7z (incluindo BCJ2, que py7zr não
+    implementa). Cobre o cliente Windows que rodou `install.bat` numa
+    máquina sem 7-Zip instalado, sem exigir winget/choco/admin.
+    """
+    if sys.platform != "win32":
+        return None
+    tools_dir = VENDOR / "_tools"
+    tools_dir.mkdir(parents=True, exist_ok=True)
+    target = tools_dir / "7zr.exe"
+    if target.exists() and target.stat().st_size > 500_000:
+        return str(target)
+
+    url = "https://www.7-zip.org/a/7zr.exe"
+    print(f"  -> Baixando 7zr.exe standalone (necessário para extrair .7z)")
+    try:
+        _stream_download(url, target)
+    except Exception as e:
+        print(f"  -> Falha ao baixar 7zr.exe: {e}")
+        if target.exists():
+            try:
+                target.unlink()
+            except OSError:
+                pass
+        return None
+    if not target.exists() or target.stat().st_size < 500_000:
+        print(f"  -> 7zr.exe baixado tem tamanho suspeito; descartando")
+        if target.exists():
+            try:
+                target.unlink()
+            except OSError:
+                pass
+        return None
+    print(f"  -> 7zr.exe pronto ({target.stat().st_size // 1024} KB)")
+    return str(target)
 
 
 def _extract_from_7z(archive: Path, member_pattern, dest_dir: Path) -> Path:
     """
-    Extrai .7z preferindo a CLI `7z` (suporta todos os filtros, incluindo BCJ2
-    usado por builds modernos do mpv para Windows). Cai em py7zr só se a CLI
-    não estiver disponível — py7zr não implementa BCJ2 e quebra em vários
-    artefatos do shinchiro/mpv-winbuild-cmake.
+    Extrai .7z usando uma CLI 7z real (suporta todos os filtros, incluindo
+    BCJ2 usado pelo mpv/shinchiro). `_find_7z_cli()` cobre PATH, instalações
+    padrão e auto-download de `7zr.exe` no Windows.
+
+    Não usamos py7zr porque ele não implementa BCJ2 — falharia justamente
+    nos artefatos que mais precisamos extrair.
     """
     import subprocess
 
     cli = _find_7z_cli()
-    if cli is not None:
-        with tempfile.TemporaryDirectory() as td:
-            subprocess.check_call([cli, "x", "-y", f"-o{td}", str(archive)],
-                                  stdout=subprocess.DEVNULL)
-            for root, _, files in os.walk(td):
-                for f in files:
-                    rel = os.path.relpath(os.path.join(root, f), td)
-                    if _matches(rel.replace("\\", "/"), member_pattern):
-                        src = Path(root) / f
-                        dst = dest_dir / src.name
-                        shutil.move(str(src), str(dst))
-                        try:
-                            dst.chmod(0o755)
-                        except OSError:
-                            pass  # Windows ignora chmod
-                        return dst
-        raise RuntimeError(f"Membro {member_pattern} não encontrado em {archive.name}")
-
-    # Fallback py7zr — funciona para 7z sem filtros exóticos
-    try:
-        import py7zr  # type: ignore
-    except ImportError:
+    if cli is None:
         raise RuntimeError(
-            "Para extrair .7z é preciso ter `7z` no PATH "
-            "(choco install 7zip / brew install p7zip) ou `pip install py7zr`."
+            "Não foi possível obter uma CLI 7z para extrair .7z. "
+            "Instale 7-Zip manualmente (winget install 7zip.7zip) ou "
+            "baixe https://7-zip.org/a/7zr.exe para vendor/_tools/7zr.exe e "
+            "rode o script novamente."
         )
-    with py7zr.SevenZipFile(archive, mode="r") as z:
-        names = z.getnames()
-        for n in names:
-            if _matches(n, member_pattern):
-                z.extract(path=str(dest_dir), targets=[n])
-                src = dest_dir / n
-                dst = dest_dir / Path(n).name
-                if src != dst:
+    with tempfile.TemporaryDirectory() as td:
+        subprocess.check_call([cli, "x", "-y", f"-o{td}", str(archive)],
+                              stdout=subprocess.DEVNULL)
+        for root, _, files in os.walk(td):
+            for f in files:
+                rel = os.path.relpath(os.path.join(root, f), td)
+                if _matches(rel.replace("\\", "/"), member_pattern):
+                    src = Path(root) / f
+                    dst = dest_dir / src.name
                     shutil.move(str(src), str(dst))
-                try:
-                    dst.chmod(0o755)
-                except OSError:
-                    pass
-                return dst
-        raise RuntimeError(f"Membro {member_pattern} não encontrado em {archive.name}")
+                    try:
+                        dst.chmod(0o755)
+                    except OSError:
+                        pass  # Windows ignora chmod
+                    return dst
+    raise RuntimeError(f"Membro {member_pattern} não encontrado em {archive.name}")
 
 
 # ──────────────────────────────────────────────────────────────────────

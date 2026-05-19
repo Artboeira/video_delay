@@ -23,8 +23,11 @@ corners). Painel e wizard são views da mesma SPA HTML/JS.
 
 - **Runtime:** Python 3.11+ e stdlib only. NUNCA adicione dep PyPI ao código
   que roda em produção.
-- **Setup:** `scripts/fetch_binaries.py` (stdlib + opcionalmente `py7zr` no
-  Windows quando a CLI 7z não está disponível). Roda uma vez no `install`.
+- **Setup:** `scripts/fetch_binaries.py` (stdlib only). No Windows, se não
+  encontrar uma CLI 7-Zip no PATH ou em Program Files, baixa
+  `7zr.exe` standalone de 7-zip.org para `vendor/_tools/` automaticamente.
+  Não usa `py7zr` porque o MPV/shinchiro usa o filtro BCJ2, que py7zr não
+  implementa.
 - **Binários:** `ffmpeg` e `mpv` ficam em `vendor/<plat>/`, baixados pelo
   `fetch_binaries.py`. `bundled_binary()` resolve primeiro `vendor/`, depois
   cai em `shutil.which` (PATH do sistema).
@@ -186,8 +189,9 @@ ConfigServer (HTTP local)  ↔  config dict  →  managers
   shinchiro). Idempotente. Suporta mode `binary` (extrai um arquivo) e
   `app_bundle` (extrai árvore inteira para mpv.app no Mac). Validação por
   tamanho mínimo; SHA-256 opcional via `--pin` para builds reproduzíveis.
-  No Windows prefere a CLI `7z` (winget install 7zip.7zip) e cai em
-  `py7zr` (instalado sob demanda) quando a CLI não está disponível.
+  No Windows usa CLI 7z (PATH > Program Files > `vendor/_tools/7zr.exe`
+  auto-baixado de 7-zip.org no primeiro uso). Não cai em py7zr — o MPV
+  usa BCJ2 e py7zr não suporta.
 - Distribuição = copiar a pasta inteira para a máquina do cliente.
   Atualização = substituir a pasta (config persiste em `user_data_dir`,
   fora do projeto).

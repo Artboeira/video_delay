@@ -169,6 +169,16 @@
         <div class="monitor-list" id="monitor-list">
           <!-- preenchido em JS -->
         </div>
+
+        <div class="field" style="margin-top: 24px;">
+          <label class="field__label">Modo janela (debug)</label>
+          <span class="field__hint">Quando ativado, o vídeo abre em janela 1280×720 em vez de fullscreen. Útil para validar o sistema via acesso remoto (RustDesk, RDP, AnyDesk), que não captura bem fullscreen exclusivo. Em produção com display físico, manter desligado. Mudança aplica no próximo start do sistema.</span>
+          <label class="toggle">
+            <input class="toggle__input" type="checkbox" id="windowed-mode" />
+            <span class="toggle__track"></span>
+            <span class="field__hint">Abrir vídeo em janela</span>
+          </label>
+        </div>
       </section>
 
       <!-- Captura -->

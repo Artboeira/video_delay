@@ -29,7 +29,8 @@ echo   Python:
 echo.
 
 echo   Baixando FFmpeg e MPV para vendor\ ^(cerca de 150 MB^).
-echo   Esta etapa so precisa ser feita uma vez.
+echo   Esta etapa so precisa ser feita uma vez. Caso falte uma CLI 7-Zip no
+echo   sistema, o script baixa automaticamente um 7zr.exe standalone (~1 MB).
 echo.
 
 %PY_CMD% scripts\fetch_binaries.py

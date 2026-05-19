@@ -80,6 +80,7 @@ _ALLOWED_FIELDS = {
     "segment_duration": int,
     "max_segment_age_seconds": int,
     "mpv_fullscreen_monitor": int,
+    "windowed_mode": bool,
 }
 
 

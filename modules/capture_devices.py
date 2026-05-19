@@ -56,7 +56,11 @@ def list_capture_devices() -> list[CaptureDevice]:
 #  Windows — DirectShow
 # ──────────────────────────────────────────────────────────────────────
 
-_DSHOW_DEVICE_RE = re.compile(r'"([^"]+)"\s*\(video\)?', re.IGNORECASE)
+# Cada linha de dispositivo termina com o tipo entre parênteses: `(video)` ou
+# `(audio)`. Usamos esse sufixo como identificador positivo em vez de depender
+# da linha-cabeçalho "DirectShow video devices" — que o FFmpeg 8.x deixou de
+# emitir (linhas agora vêm prefixadas por `[in#0 @ ...]` sem cabeçalho de seção).
+_DSHOW_VIDEO_RE = re.compile(r'"([^"]+)"\s*\(video\)')
 
 
 def _list_dshow() -> list[CaptureDevice]:
@@ -69,27 +73,22 @@ def _list_dshow() -> list[CaptureDevice]:
     ]
     out = _run_ffmpeg(cmd)
     devices: list[CaptureDevice] = []
-    in_video_section = False
+    seen: set[str] = set()
     for line in out.splitlines():
-        if "DirectShow video devices" in line:
-            in_video_section = True
-            continue
-        if "DirectShow audio devices" in line:
-            in_video_section = False
-            continue
-        if not in_video_section:
-            continue
-        # Ignora "Alternative name" lines
         if "Alternative name" in line:
             continue
-        m = re.search(r'"([^"]+)"', line)
-        if m:
-            name = m.group(1)
-            devices.append(CaptureDevice(
-                index=len(devices),
-                name=name,
-                platform_id=name,  # dshow usa o próprio nome como ID
-            ))
+        m = _DSHOW_VIDEO_RE.search(line)
+        if not m:
+            continue
+        name = m.group(1)
+        if name in seen:
+            continue
+        seen.add(name)
+        devices.append(CaptureDevice(
+            index=len(devices),
+            name=name,
+            platform_id=name,  # dshow usa o próprio nome como ID
+        ))
     return devices
 
 

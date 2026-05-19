@@ -153,6 +153,27 @@ class MpvCommandTests(unittest.TestCase):
         # Compara como Path para neutralizar separador POSIX vs Windows
         self.assertEqual(Path(cmd[-1]), seg)
 
+    def test_fullscreen_by_default(self):
+        """Sem windowed_mode no config, padrão é fullscreen exclusivo."""
+        player = PlayerManager(make_config())
+        cmd = player._build_mpv_cmd(Path("/tmp/fake.ts"))
+        self.assertIn("--fullscreen", cmd)
+        self.assertNotIn("--no-fullscreen", cmd)
+
+    def test_windowed_mode_skips_fullscreen_flags(self):
+        """Com windowed_mode=True, MPV roda em janela — sem --fullscreen e
+        sem --fs-screen, com geometry definida. Existe para debug remoto via
+        RustDesk/RDP, que não capturam bem fullscreen exclusivo."""
+        player = PlayerManager(make_config(windowed_mode=True))
+        cmd = player._build_mpv_cmd(Path("/tmp/fake.ts"))
+        self.assertIn("--no-fullscreen", cmd)
+        self.assertNotIn("--fullscreen", cmd)
+        # Sem --screen/--fs-screen em modo janela (não fazem sentido)
+        self.assertFalse(any(a.startswith("--fs-screen") for a in cmd))
+        self.assertFalse(any(a.startswith("--screen=") for a in cmd))
+        # Tem que definir geometria explícita
+        self.assertTrue(any(a.startswith("--geometry=") for a in cmd))
+
 
 class DelayControlTests(unittest.TestCase):
     def test_set_delay_clamps_to_minimum_10(self):

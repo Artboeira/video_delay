@@ -111,21 +111,35 @@ class PlayerManager:
 
     def _build_mpv_cmd(self, first_segment: Path) -> list:
         monitor = self.config.get("mpv_fullscreen_monitor", 0)
-        return [
+        windowed = bool(self.config.get("windowed_mode", False))
+        cmd = [
             bundled_binary("mpv"),
             f"--input-ipc-server={MPV_PIPE}",
-            "--fullscreen",
             "--really-quiet",
             "--no-terminal",
             "--no-osc",
             "--no-osd-bar",
-            f"--screen={monitor}",
-            f"--fs-screen={monitor}",
             "--keep-open=always",       # Não fecha ao acabar a playlist
             "--idle=yes",
             "--hr-seek=yes",
-            str(first_segment),
         ]
+        if windowed:
+            # Modo janela: útil para validar via acesso remoto (RustDesk, RDP),
+            # que geralmente não captura bem janelas em fullscreen exclusivo.
+            # Em produção com display físico, manter desligado.
+            cmd += [
+                "--no-fullscreen",
+                "--geometry=1280x720",
+                "--autofit=80%",
+            ]
+        else:
+            cmd += [
+                "--fullscreen",
+                f"--screen={monitor}",
+                f"--fs-screen={monitor}",
+            ]
+        cmd.append(str(first_segment))
+        return cmd
 
     def _start_mpv(self, first_segment: Path):
         cmd = self._build_mpv_cmd(first_segment)
@@ -137,10 +151,19 @@ class PlayerManager:
         time.sleep(1.5)  # Aguarda o MPV criar o IPC
 
     def _queue_segment(self, seg: Path):
-        """Adiciona segmento na fila do MPV (append)."""
+        """
+        Adiciona segmento na fila do MPV.
+
+        Usa `append-play` em vez de `append`: se o MPV já reproduziu tudo da
+        playlist e está parado na última frame (por causa de `--keep-open`),
+        `append` apenas empilha sem destravar — vídeo congela após o último
+        segmento conhecido. `append-play` empilha E inicia a reprodução se
+        estiver parado, garantindo continuidade quando novos segmentos
+        chegam depois de uma pausa.
+        """
         if seg in self._queued_segments:
             return
-        if _send_mpv(["loadfile", str(seg), "append"]):
+        if _send_mpv(["loadfile", str(seg), "append-play"]):
             self._queued_segments.add(seg)
 
     def _check_mpv_alive(self) -> bool:

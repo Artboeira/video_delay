@@ -12,13 +12,29 @@ from modules.capture_devices import (
 )
 
 
+# Formato FFmpeg 4-7: prefixo [dshow @ ...] e seções com cabeçalho explícito.
 _DSHOW_FIXTURE = """\
 [dshow @ 0x123] DirectShow video devices (some options omitted):
-[dshow @ 0x123]  "Elgato HD60 S+"
+[dshow @ 0x123]  "Elgato HD60 S+" (video)
 [dshow @ 0x123]     Alternative name "@device_pnp_\\\\?\\usb#vid_0fd9..."
-[dshow @ 0x123]  "USB Video"
+[dshow @ 0x123]  "USB Video" (video)
 [dshow @ 0x123] DirectShow audio devices
-[dshow @ 0x123]  "Microphone (Realtek)"
+[dshow @ 0x123]  "Microphone (Realtek)" (audio)
+"""
+
+# Formato FFmpeg 8.x: prefixo [in#0 @ ...], sem cabeçalho de seção. Capturado
+# da saída real de uma placa VEDO-VDV66003 em Windows 11 (2026-05). O parser
+# tem que sobreviver à transição sem regressão.
+_DSHOW_FIXTURE_FFMPEG_8 = """\
+[in#0 @ 0000028de89e87c0] "NDI Webcam Video 1" (video)
+[in#0 @ 0000028de89e87c0]   Alternative name "@device_pnp_\\\\?\\root#media#0001#vidsource0"
+[in#0 @ 0000028de89e87c0] "Integrated Webcam" (video)
+[in#0 @ 0000028de89e87c0]   Alternative name "@device_pnp_\\\\?\\usb#vid_0c45..."
+[in#0 @ 0000028de89e87c0] "VEDO-VDV66003" (video)
+[in#0 @ 0000028de89e87c0]   Alternative name "@device_pnp_\\\\?\\usb#vid_048d..."
+[in#0 @ 0000028de89e87c0] "OBS Virtual Camera" (none)
+[in#0 @ 0000028de89e87c0] "Microfone (VEDO-VDV66003)" (audio)
+[in#0 @ 0000028de89e87c0] "HDMI (2- VEDO-VDV66003)" (audio)
 """
 
 _AVFOUNDATION_FIXTURE = """\
@@ -50,6 +66,29 @@ class DshowParserTests(unittest.TestCase):
         with patch.object(capture_devices, "_run_ffmpeg", return_value=_DSHOW_FIXTURE):
             devices = _list_dshow()
         self.assertEqual(devices[0].platform_id, devices[0].name)
+
+    def test_parses_ffmpeg_8_format_without_section_header(self):
+        """FFmpeg 8.x mudou o prefixo de [dshow @ ...] para [in#0 @ ...] e
+        deixou de emitir o cabeçalho 'DirectShow video devices'. O parser
+        deve identificar dispositivos de vídeo pelo sufixo (video) em cada
+        linha, sem depender de cabeçalhos de seção."""
+        with patch.object(capture_devices, "_run_ffmpeg",
+                          return_value=_DSHOW_FIXTURE_FFMPEG_8):
+            devices = _list_dshow()
+        names = [d.name for d in devices]
+        self.assertIn("VEDO-VDV66003", names)
+        self.assertIn("Integrated Webcam", names)
+        self.assertIn("NDI Webcam Video 1", names)
+
+    def test_ffmpeg_8_excludes_audio_and_none_devices(self):
+        """O sufixo (audio) e (none) devem ser ignorados — só (video) entra."""
+        with patch.object(capture_devices, "_run_ffmpeg",
+                          return_value=_DSHOW_FIXTURE_FFMPEG_8):
+            devices = _list_dshow()
+        names = [d.name for d in devices]
+        self.assertNotIn("Microfone (VEDO-VDV66003)", names)
+        self.assertNotIn("HDMI (2- VEDO-VDV66003)", names)
+        self.assertNotIn("OBS Virtual Camera", names)
 
 
 class AvfoundationParserTests(unittest.TestCase):

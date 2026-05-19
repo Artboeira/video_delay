@@ -59,6 +59,7 @@ function fillForm(c) {
   $('delay-readout-raw').textContent = `${c.delay_seconds} segundos`;
   $('capture-device').value = c.capture_device || '';
   $('test-mode').checked = !!c.test_mode;
+  $('windowed-mode').checked = !!c.windowed_mode;
   $('preset').value = c.video_quality?.preset || 'ultrafast';
   $('crf').value = c.video_quality?.crf ?? 18;
   $('segment-duration').value = c.segment_duration ?? 5;
@@ -71,6 +72,7 @@ function readForm() {
     delay_seconds:           parseInt($('delay-range').value, 10),
     capture_device:          $('capture-device').value.trim(),
     test_mode:               $('test-mode').checked,
+    windowed_mode:           $('windowed-mode').checked,
     segment_duration:        parseInt($('segment-duration').value, 10),
     max_segment_age_seconds: parseInt($('max-age').value, 10),
     mpv_fullscreen_monitor:  STATE.config.mpv_fullscreen_monitor ?? 0,

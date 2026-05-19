@@ -112,6 +112,97 @@ Para validar a instalação sem placa de captura conectada, use
 HDMI, o sistema gera uma fonte sintética com clock visível — útil para
 confirmar que FFmpeg, MPV e o playback estão funcionando.
 
+### Trocar entre modo teste e modo real
+
+Depois de testar em modo sintético, para passar a usar a placa de captura
+real:
+
+1. **Conecte a placa HDMI** antes de iniciar — ela precisa estar plugada
+   no momento em que o sistema enumera dispositivos.
+2. Feche a janela do `run-test` (tecla `q` ou fechar a janela).
+3. (Opcional, recomendado) Apague o arquivo `.setup_complete` para forçar
+   o wizard a reaparecer:
+
+   | Sistema | Caminho a apagar |
+   |---|---|
+   | macOS | `~/Library/Application Support/VideoDelay/.setup_complete` |
+   | Windows | `%APPDATA%\VideoDelay\.setup_complete` |
+
+4. Duplo-clique em `run.command` / `run.bat` (sem `-test`).
+5. Wizard reaparece: escolha placa → monitor → delay → Iniciar.
+
+> **Sem apagar a flag**: o painel ainda permite trocar a placa em
+> **Configurações → Captura → Dispositivo**. A captura reinicia automaticamente
+> quando você salva. Use essa rota se quiser preservar histórico de log e
+> configurações de delay/qualidade.
+
+---
+
+## Iniciar com o sistema (auto-start)
+
+Para que o Video Delay suba sozinho no boot da máquina — útil em instalações
+permanentes — há dois caminhos. Escolha conforme o cenário.
+
+### Windows — pasta Startup (mais simples)
+
+Funciona sem privilégio admin, dispara após o login do usuário.
+
+1. **Botão direito** em `run.bat` → **Criar atalho**. Um arquivo
+   `run.bat - Atalho` aparece na mesma pasta.
+2. **`Win+R`** → digite `shell:startup` → Enter. Abre a pasta de auto-start
+   do usuário atual (`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`).
+3. **Mova o atalho** para essa pasta.
+4. (Opcional) Botão direito no atalho → **Propriedades** → aba **Atalho** →
+   campo **Executar**: troque **"Janela normal"** por **"Minimizada"** para
+   o terminal não atrapalhar visualmente.
+
+Reiniciar a máquina e fazer login dispara o `run.bat`. O navegador padrão
+abre com o painel automaticamente, o MPV vai pro monitor configurado e a
+captura começa após o tempo de buffer (delay configurado).
+
+### Windows — Task Scheduler (mais robusto)
+
+Preferível em instalação dedicada (kiosk, sinalização digital), porque
+permite: reiniciar automaticamente em caso de crash, atraso após boot
+(deixa a placa USB inicializar), execução mesmo com sessão bloqueada.
+
+1. `Win+R` → `taskschd.msc` → Enter
+2. Painel direito → **Criar Tarefa Básica** (não "Criar Tarefa" — esse é
+   o avançado)
+3. Nome: `Video Delay System` → Avançar
+4. Disparador: **"Quando eu fizer logon"** → Avançar
+5. Ação: **"Iniciar um programa"** → Avançar
+6. Programa/script: cole o caminho completo do `run.bat`, exemplo
+   `C:\VideoDelay\run.bat`
+7. "Iniciar em": cole apenas a pasta, exemplo `C:\VideoDelay\`
+8. Avançar → Concluir
+9. Volte na tarefa criada → botão direito → **Propriedades**:
+   - Aba **Geral** → marque **"Executar somente quando o usuário estiver
+     conectado"** (precisa da sessão pra acessar display)
+   - Aba **Configurações** → marque **"Se a tarefa falhar, reiniciá-la a
+     cada 1 minuto"**, limite de **3 reinícios**
+   - Aba **Disparadores** → editar o disparador → marque **"Atrasar tarefa
+     por: 30 segundos"** (dá tempo da placa USB inicializar)
+
+### macOS — Login Items
+
+1. **Configurações do Sistema** → **Geral** → **Itens de Início de Sessão**
+2. Clique em **+** abaixo da lista "Abrir no login"
+3. Navegue até a pasta do projeto e selecione `run.command`
+4. Reiniciar → fazer login dispara o run.command
+
+Para janela do Terminal não aparecer, marque a opção "Ocultar" na linha
+do item. Os logs continuam sendo gravados no arquivo `videodelay.log`.
+
+### Encerrar uma instância em auto-start
+
+Independentemente do método de start, para encerrar:
+- **Pelo painel**: abrir `http://127.0.0.1:8765/` → botão **Encerrar**
+- **Pelo Terminal/Prompt** (se a janela estiver visível): tecla `q`
+- **Forçado**: encerre o processo `python` no Gerenciador de Tarefas
+  (Win) ou Activity Monitor (Mac). O lock de single-instance é apenas
+  port-probe, então qualquer encerramento desbloqueia a próxima execução.
+
 ---
 
 ## Solução de problemas
@@ -138,9 +229,21 @@ shinchiro (MPV Win). Falhas comuns:
   `https://www.gyan.dev` no navegador.
 - **Proxy corporativo**: defina as variáveis `HTTP_PROXY` e `HTTPS_PROXY`
   no terminal antes de rodar `install`.
-- **Windows: arquivo .7z não extrai**: rode `winget install 7zip.7zip`
-  ou baixe de [7-zip.org](https://www.7-zip.org/). O fetch_binaries
-  prefere a CLI `7z` quando disponível.
+- **Windows: arquivo .7z não extrai**: o `fetch_binaries.py` precisa de
+  uma CLI 7-Zip real porque o MPV usa o filtro BCJ2 (que extratores
+  Python-puro como `py7zr` não suportam). Ordem de busca, automática:
+  1. `7z` / `7za` / `7zr` no PATH
+  2. Instalação padrão em `C:\Program Files\7-Zip\`
+  3. Auto-download de `7zr.exe` standalone de 7-zip.org para
+     `vendor\_tools\7zr.exe` (~1 MB, sem precisar de admin ou pacote)
+
+  Se o auto-download falhar (rede bloqueada, antivírus corporativo
+  segurando `.exe` baixados), saídas alternativas:
+  - Instalar 7-Zip normalmente: `winget install 7zip.7zip` ou baixar de
+    [7-zip.org](https://www.7-zip.org/).
+  - Baixar manualmente https://7-zip.org/a/7zr.exe e salvar como
+    `vendor\_tools\7zr.exe` na pasta do projeto, depois rodar `install.bat`
+    de novo.
 
 Se nada disso resolveu, baixe os binários manualmente e coloque na pasta
 correta:

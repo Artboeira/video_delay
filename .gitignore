@@ -1,19 +1,16 @@
-# Runtime — gerados pelo app em modo dev
+# Runtime — gerados pelo app
 segments/
 logs/
 .setup_complete
 
-# Build artifacts
-build/
-dist/
-*.spec
+# Python bytecode
 __pycache__/
 *.pyc
 
-# Binarios baixados pelo scripts/fetch_binaries.py
+# Binarios baixados pelo scripts/fetch_binaries.py (cerca de 150 MB)
 vendor/
 
-# Estado local
+# Estado local do editor / SO
 .DS_Store
 .idea/
 .vscode/

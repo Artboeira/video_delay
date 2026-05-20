@@ -26,6 +26,11 @@ from .paths import bundled_binary
 
 _IS_WINDOWS = sys.platform == "win32"
 
+# Teto de entradas mantidas na playlist do MPV. Sem isso a playlist cresce
+# indefinidamente em sessões longas (cada .ts reproduzido fica nela). 40
+# entradas ≈ 200s de playlist com segmentos de 5s — folgado vs qualquer delay.
+MPV_PLAYLIST_CAP = 40
+
 # Caminho do canal IPC do MPV. No Windows usa named pipe; em Unix, socket UNIX.
 # O MPV aceita ambos via --input-ipc-server=<caminho>.
 if _IS_WINDOWS:
@@ -119,7 +124,7 @@ class PlayerManager:
             "--no-terminal",
             "--no-osc",
             "--no-osd-bar",
-            "--keep-open=always",       # Não fecha ao acabar a playlist
+            "--keep-open=yes",          # Avança entre arquivos; pausa só no fim da playlist
             "--idle=yes",
             "--hr-seek=yes",
         ]
@@ -154,12 +159,11 @@ class PlayerManager:
         """
         Adiciona segmento na fila do MPV.
 
-        Usa `append-play` em vez de `append`: se o MPV já reproduziu tudo da
-        playlist e está parado na última frame (por causa de `--keep-open`),
-        `append` apenas empilha sem destravar — vídeo congela após o último
-        segmento conhecido. `append-play` empilha E inicia a reprodução se
-        estiver parado, garantindo continuidade quando novos segmentos
-        chegam depois de uma pausa.
+        Com `--keep-open=yes`, MPV avança automaticamente entre arquivos da
+        playlist e só pausa quando esgota o último — situação que acontece
+        se o cleaner deletar segmentos mais rápido que o player consome ou
+        se a captura travar. `append-play` empilha o novo segmento E
+        destrava o MPV caso ele esteja pausado no fim da playlist.
         """
         if seg in self._queued_segments:
             return
@@ -168,6 +172,21 @@ class PlayerManager:
 
     def _check_mpv_alive(self) -> bool:
         return self._mpv_process is not None and self._mpv_process.poll() is None
+
+    def _trim_playlist(self):
+        """
+        Mantém a playlist do MPV enxuta em sessões longas.
+
+        Remove a entrada mais antiga (índice 0) quando a fila passa do cap.
+        Essa entrada já foi consumida e já aponta para um .ts apagado pelo
+        cleaner — removê-la é sempre seguro. O gate `> MPV_PLAYLIST_CAP`
+        garante que o índice 0 está bem atrás do item em reprodução, então
+        nunca removemos o segmento que está tocando.
+        """
+        if len(self._queued_segments) <= MPV_PLAYLIST_CAP:
+            return
+        if _send_mpv(["playlist-remove", 0]):
+            self._queued_segments.discard(min(self._queued_segments))
 
     # ------------------------------------------------------------------ #
     #  Loop principal                                                      #
@@ -232,6 +251,9 @@ class PlayerManager:
             ready = self._get_ready_segments()
             for seg in ready:
                 self._queue_segment(seg)
+
+            # Poda a playlist do MPV para não crescer sem limite.
+            self._trim_playlist()
 
             delay = self.config["delay_seconds"]
             self.status = f"Reproduzindo  |  Delay: {delay}s ({delay//60}min {delay%60:02d}s)"

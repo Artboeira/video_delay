@@ -3,9 +3,11 @@
 import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 from tests._helpers import make_config, TempSegments
-from modules.player import PlayerManager
+from modules import player as player_module
+from modules.player import PlayerManager, MPV_PLAYLIST_CAP
 
 
 class ParseSegmentTimeTests(unittest.TestCase):
@@ -173,6 +175,46 @@ class MpvCommandTests(unittest.TestCase):
         self.assertFalse(any(a.startswith("--screen=") for a in cmd))
         # Tem que definir geometria explícita
         self.assertTrue(any(a.startswith("--geometry=") for a in cmd))
+
+
+class TrimPlaylistTests(unittest.TestCase):
+    @staticmethod
+    def _queue(count: int) -> set:
+        # Nomes timestamp: ordem alfabética == ordem cronológica.
+        return {Path(f"/tmp/seg/20260101_{i:06d}.ts") for i in range(count)}
+
+    def test_trim_playlist_removes_oldest_when_over_cap(self):
+        player = PlayerManager(make_config())
+        player._queued_segments = self._queue(MPV_PLAYLIST_CAP + 5)
+        oldest = min(player._queued_segments)
+
+        with patch.object(player_module, "_send_mpv", return_value=True) as mock:
+            player._trim_playlist()
+
+        mock.assert_called_once_with(["playlist-remove", 0])
+        self.assertEqual(len(player._queued_segments), MPV_PLAYLIST_CAP + 4)
+        self.assertNotIn(oldest, player._queued_segments)
+
+    def test_trim_playlist_noop_under_cap(self):
+        player = PlayerManager(make_config())
+        player._queued_segments = self._queue(10)
+        before = set(player._queued_segments)
+
+        with patch.object(player_module, "_send_mpv", return_value=True) as mock:
+            player._trim_playlist()
+
+        mock.assert_not_called()
+        self.assertEqual(player._queued_segments, before)
+
+    def test_trim_playlist_keeps_set_when_send_fails(self):
+        # Se o IPC falhar, o set não encolhe — evita dessincronia com o MPV.
+        player = PlayerManager(make_config())
+        player._queued_segments = self._queue(MPV_PLAYLIST_CAP + 5)
+
+        with patch.object(player_module, "_send_mpv", return_value=False):
+            player._trim_playlist()
+
+        self.assertEqual(len(player._queued_segments), MPV_PLAYLIST_CAP + 5)
 
 
 class DelayControlTests(unittest.TestCase):

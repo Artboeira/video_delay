@@ -118,7 +118,7 @@ DEFAULT_CONFIG = {
     "segment_duration": 5,
     "capture_device": "YOUR_CAPTURE_CARD_NAME",
     "segment_folder": "segments",
-    "max_segment_age_seconds": 600,
+    "max_segment_age_seconds": 240,
     "mpv_fullscreen_monitor": 0,
     "test_mode": False,
     "windowed_mode": False,
@@ -329,6 +329,11 @@ def main():
     player = PlayerManager(config)
     cleaner = CleanerManager(config)
 
+    # Limpeza de boot: descarta segmentos de sessões anteriores para o player
+    # nunca reproduzir "buffer falso". Síncrono — nada grava .ts ainda.
+    removed = cleaner.purge_all()
+    log.info("Boot: %d segmento(s) de sessao anterior removido(s)", removed)
+
     # Shutdown sinalizador compartilhado com o painel web
     shutdown_event = threading.Event()
 
@@ -432,6 +437,10 @@ def main():
     capture.stop()
     player.stop()
     cleaner.stop()
+    # purge_all depois de capture/player pararem: FFmpeg e MPV já soltaram
+    # os handles dos .ts, então a deleção não falha no Windows.
+    removed = cleaner.purge_all()
+    log.info("Shutdown: %d segmento(s) removido(s)", removed)
     tty("  Sistema encerrado.\n")
     log.info("Sistema encerrado.")
 

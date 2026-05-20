@@ -124,6 +124,15 @@ class ConfigServerEndpointsTests(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertIn("max_segment_age_seconds", body["error"])
 
+    def test_post_config_rejects_max_age_within_margin(self):
+        # max_age maior que delay, mas sem os 60s de margem exigidos.
+        status, body = _post_json(
+            self.h.url("/api/config"),
+            {"delay_seconds": 100, "max_segment_age_seconds": 130},
+        )
+        self.assertEqual(status, 400)
+        self.assertIn("max_segment_age_seconds", body["error"])
+
     def test_post_config_rejects_crf_out_of_range(self):
         status, body = _post_json(
             self.h.url("/api/config"),

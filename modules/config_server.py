@@ -83,6 +83,11 @@ _ALLOWED_FIELDS = {
     "windowed_mode": bool,
 }
 
+# Folga mínima exigida entre max_segment_age_seconds e delay_seconds. Cobre o
+# intervalo de 30s do loop do cleaner mais o jitter de captura — sem ela o
+# cleaner pode apagar um segmento que o player ainda quer.
+_MIN_AGE_MARGIN = 60
+
 
 def _coerce(field: str, value):
     expected = _ALLOWED_FIELDS[field]
@@ -290,7 +295,8 @@ class ServerState:
         Aplica mutações no config dict compartilhado e persiste em disco.
 
         Regras:
-        - max_segment_age_seconds deve ser > delay_seconds (senão player fica seco).
+        - max_segment_age_seconds deve ser >= delay_seconds + _MIN_AGE_MARGIN
+          (senão o cleaner apaga segmentos que o player ainda quer).
         - delay_seconds mínimo é 10 (clamp no PlayerManager mas validamos antes).
         - capture_device em modo de teste é irrelevante (mas aceito).
         - Mudança de qualquer campo fora de delay implica em reiniciar captura
@@ -315,8 +321,10 @@ class ServerState:
         if delay < 10:
             raise ValueError("delay_seconds mínimo é 10")
         max_age = clean.get("max_segment_age_seconds", self.config["max_segment_age_seconds"])
-        if max_age <= delay:
-            raise ValueError("max_segment_age_seconds precisa ser maior que delay_seconds")
+        if max_age < delay + _MIN_AGE_MARGIN:
+            raise ValueError(
+                f"max_segment_age_seconds precisa ser >= delay + {_MIN_AGE_MARGIN}s "
+                f"(mínimo {delay + _MIN_AGE_MARGIN} para este delay)")
 
         # Aplica em memória e persiste
         with self._lock:

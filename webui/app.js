@@ -63,7 +63,7 @@ function fillForm(c) {
   $('preset').value = c.video_quality?.preset || 'ultrafast';
   $('crf').value = c.video_quality?.crf ?? 18;
   $('segment-duration').value = c.segment_duration ?? 5;
-  $('max-age').value = c.max_segment_age_seconds ?? 600;
+  $('max-age').value = c.max_segment_age_seconds ?? 240;
   renderMonitors(c.mpv_fullscreen_monitor ?? 0);
 }
 
@@ -135,8 +135,8 @@ async function loadAll() {
 async function save() {
   const payload = readForm();
   // Coerência mínima feita no cliente; backend valida de novo.
-  if (payload.max_segment_age_seconds <= payload.delay_seconds) {
-    toast('Idade máx. deve ser maior que o delay', 'err');
+  if (payload.max_segment_age_seconds < payload.delay_seconds + 60) {
+    toast('Idade máx. deve ser pelo menos 60s acima do delay', 'err');
     return;
   }
   try {

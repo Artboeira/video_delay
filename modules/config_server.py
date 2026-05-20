@@ -275,6 +275,8 @@ class ServerState:
             buffer_progress = self.player._buffer_progress()
         except Exception:
             buffer_progress = 0.0
+        # Delay real medido pela malha fechada do player (None até medir).
+        measured = getattr(self.player, "measured_delay", None)
         return {
             "capture_running": bool(self.capture.running),
             "capture_error":   self.capture.error_message or "",
@@ -283,6 +285,9 @@ class ServerState:
             "buffer_progress": float(buffer_progress),
             "deleted_count":   int(self.cleaner.deleted_count),
             "delay_seconds":   int(self.player.get_delay()),
+            "measured_delay_seconds": (
+                round(float(measured), 1) if measured is not None else None
+            ),
             "monitor":         int(self.config.get("mpv_fullscreen_monitor", 0)),
             "test_mode":       bool(self.config.get("test_mode", False)),
             "timestamp":       time.time(),
@@ -353,6 +358,31 @@ class ServerState:
                     pass  # fallback silencioso — só delay/monitor mudaram
 
             return json.loads(json.dumps(self.config))
+
+    def adjust_delay(self, delta: int) -> int:
+        """
+        Ajusta `delay_seconds` em `delta` (negativo diminui) respeitando os
+        invariantes do sistema — usado pelos atalhos +/- do teclado.
+
+        Diferente de mexer no config dict na mão, passa por `apply_config`:
+        clampa em 10s, sobe `max_segment_age_seconds` junto quando preciso
+        (senão o cleaner apagaria segmentos que o player ainda quer), persiste
+        em disco e notifica o player. Retorna o novo delay.
+        """
+        with self._lock:
+            current = int(self.config.get("delay_seconds", 10))
+            current_age = int(self.config.get("max_segment_age_seconds", 0))
+
+        new_delay = max(10, current + int(delta))
+        payload = {"delay_seconds": new_delay}
+
+        # Garante a folga que o cleaner exige; sobe max_age se o delay cresceu.
+        needed_age = new_delay + _MIN_AGE_MARGIN
+        if current_age < needed_age:
+            payload["max_segment_age_seconds"] = needed_age
+
+        self.apply_config(payload)
+        return new_delay
 
     def request_shutdown(self):
         self.shutdown_event.set()

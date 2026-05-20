@@ -178,43 +178,142 @@ class MpvCommandTests(unittest.TestCase):
 
 
 class TrimPlaylistTests(unittest.TestCase):
+    """O trim consulta o estado real do MPV (playlist-count/playlist-pos)."""
+
     @staticmethod
-    def _queue(count: int) -> set:
-        # Nomes timestamp: ordem alfabética == ordem cronológica.
-        return {Path(f"/tmp/seg/20260101_{i:06d}.ts") for i in range(count)}
+    def _query_returning(count, pos):
+        """Fabrica um fake de _query_mpv que responde count/pos por propriedade."""
+        def fake(prop):
+            return {
+                "playlist-count": (count, True),
+                "playlist-pos": (pos, True),
+            }[prop]
+        return fake
 
-    def test_trim_playlist_removes_oldest_when_over_cap(self):
+    def test_removes_oldest_when_over_cap_and_playhead_ahead(self):
         player = PlayerManager(make_config())
-        player._queued_segments = self._queue(MPV_PLAYLIST_CAP + 5)
-        oldest = min(player._queued_segments)
-
-        with patch.object(player_module, "_send_mpv", return_value=True) as mock:
+        with patch.object(player_module, "_query_mpv",
+                           side_effect=self._query_returning(MPV_PLAYLIST_CAP + 5, 30)), \
+             patch.object(player_module, "_send_mpv", return_value=True) as send:
             player._trim_playlist()
+        send.assert_called_once_with(["playlist-remove", 0])
 
-        mock.assert_called_once_with(["playlist-remove", 0])
-        self.assertEqual(len(player._queued_segments), MPV_PLAYLIST_CAP + 4)
-        self.assertNotIn(oldest, player._queued_segments)
-
-    def test_trim_playlist_noop_under_cap(self):
+    def test_noop_under_cap(self):
         player = PlayerManager(make_config())
-        player._queued_segments = self._queue(10)
-        before = set(player._queued_segments)
-
-        with patch.object(player_module, "_send_mpv", return_value=True) as mock:
+        with patch.object(player_module, "_query_mpv",
+                           side_effect=self._query_returning(10, 5)), \
+             patch.object(player_module, "_send_mpv", return_value=True) as send:
             player._trim_playlist()
+        send.assert_not_called()
 
-        mock.assert_not_called()
-        self.assertEqual(player._queued_segments, before)
-
-    def test_trim_playlist_keeps_set_when_send_fails(self):
-        # Se o IPC falhar, o set não encolhe — evita dessincronia com o MPV.
+    def test_noop_when_playhead_near_start(self):
+        # Excede o cap, mas o item em reprodução está no índice 1 — remover o
+        # índice 0 arriscaria o que está tocando, então o trim não faz nada.
         player = PlayerManager(make_config())
-        player._queued_segments = self._queue(MPV_PLAYLIST_CAP + 5)
-
-        with patch.object(player_module, "_send_mpv", return_value=False):
+        with patch.object(player_module, "_query_mpv",
+                           side_effect=self._query_returning(MPV_PLAYLIST_CAP + 5, 1)), \
+             patch.object(player_module, "_send_mpv", return_value=True) as send:
             player._trim_playlist()
+        send.assert_not_called()
 
-        self.assertEqual(len(player._queued_segments), MPV_PLAYLIST_CAP + 5)
+    def test_noop_when_ipc_unavailable(self):
+        # Sem MPV, _query_mpv devolve (None, False) — trim é no-op seguro.
+        player = PlayerManager(make_config())
+        with patch.object(player_module, "_query_mpv", return_value=(None, False)), \
+             patch.object(player_module, "_send_mpv", return_value=True) as send:
+            player._trim_playlist()
+        send.assert_not_called()
+
+
+class PruneQueuedTests(unittest.TestCase):
+    def test_drops_segments_whose_file_is_gone(self):
+        # O set de dedup é podado por existência de arquivo: o que o cleaner
+        # apagou sai do set (e some de _get_ready_segments), evitando reenfileirar.
+        with TempSegments() as ts:
+            alive = ts.create_at(datetime.now() - timedelta(seconds=100))
+            gone = ts.dir / "20260101_000000.ts"  # nunca criado em disco
+            player = PlayerManager(make_config(segment_folder=str(ts.dir)))
+            player._queued_segments = {alive, gone}
+            player._prune_queued()
+            self.assertEqual(player._queued_segments, {alive})
+
+
+class MeasureDelayTests(unittest.TestCase):
+    def test_computes_delay_from_path_and_time_pos(self):
+        player = PlayerManager(make_config())
+        seg_start = datetime.now() - timedelta(seconds=300)
+        path = f"/tmp/seg/{seg_start.strftime('%Y%m%d_%H%M%S')}.ts"
+
+        def fake_query(prop):
+            return {"path": (path, True), "time-pos": (2.0, True)}[prop]
+
+        with patch.object(player_module, "_query_mpv", side_effect=fake_query):
+            measured = player._measure_delay()
+        # delay real = now - (seg_start + 2s) ≈ 300 - 2 = 298
+        self.assertAlmostEqual(measured, 298.0, delta=2.0)
+
+    def test_returns_none_when_path_changes_between_reads(self):
+        # path lido antes e depois de time-pos: se mudou, a medida cruzaria
+        # uma fronteira de segmento (erro de ~5s) — descarta.
+        player = PlayerManager(make_config())
+        seq = iter([
+            ("/tmp/seg/20260101_000000.ts", True),  # path
+            (2.0, True),                            # time-pos
+            ("/tmp/seg/20260101_000005.ts", True),  # path (mudou!)
+        ])
+        with patch.object(player_module, "_query_mpv", side_effect=lambda p: next(seq)):
+            self.assertIsNone(player._measure_delay())
+
+    def test_returns_none_when_ipc_fails(self):
+        player = PlayerManager(make_config())
+        with patch.object(player_module, "_query_mpv", return_value=(None, False)):
+            self.assertIsNone(player._measure_delay())
+
+
+class CorrectDriftTests(unittest.TestCase):
+    @staticmethod
+    def _playlist(starts):
+        return [
+            {"filename": f"/tmp/seg/{s.strftime('%Y%m%d_%H%M%S')}.ts"}
+            for s in starts
+        ]
+
+    def test_no_jump_within_tolerance(self):
+        player = PlayerManager(make_config(delay_seconds=10))
+        with patch.object(player, "_measure_delay", return_value=12.0), \
+             patch.object(player, "_jump_to") as jump:
+            player._correct_drift()
+        jump.assert_not_called()
+        self.assertEqual(player.measured_delay, 12.0)
+
+    def test_jumps_forward_when_drift_exceeds_tolerance(self):
+        player = PlayerManager(make_config(delay_seconds=10))
+        now = datetime.now()
+        starts = [now - timedelta(seconds=s)
+                  for s in (70, 65, 60, 55, 50, 45, 40, 35, 30, 25, 20, 15, 10, 5)]
+        playlist = self._playlist(starts)
+
+        with patch.object(player, "_measure_delay", return_value=65.0), \
+             patch.object(player_module, "_query_mpv", return_value=(playlist, True)), \
+             patch.object(player, "_jump_to", return_value=True) as jump:
+            player._correct_drift()
+
+        jump.assert_called_once()
+        index, offset = jump.call_args[0]
+        # Alvo = now - 10s → último segmento com início <= alvo é o de -10s.
+        expected = f"/tmp/seg/{(now - timedelta(seconds=10)).strftime('%Y%m%d_%H%M%S')}.ts"
+        self.assertEqual(playlist[index]["filename"], expected)
+        self.assertGreaterEqual(offset, 0.0)
+        self.assertLess(offset, 6.0)
+        self.assertEqual(player._correct_cooldown, 2)
+
+    def test_cooldown_skips_measurement(self):
+        player = PlayerManager(make_config(delay_seconds=10))
+        player._correct_cooldown = 2
+        with patch.object(player, "_measure_delay") as measure:
+            player._correct_drift()
+        measure.assert_not_called()
+        self.assertEqual(player._correct_cooldown, 1)
 
 
 class DelayControlTests(unittest.TestCase):

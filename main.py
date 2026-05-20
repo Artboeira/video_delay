@@ -404,13 +404,20 @@ def main():
                         except Exception as e:
                             log.warning("Falha ao abrir browser: %s", e)
                     elif k == '+' or k == '=':
-                        player.set_delay(player.get_delay() + STEP)
-                        config["delay_seconds"] = player.get_delay()
-                        log.info("Delay aumentado para %ss", player.get_delay())
+                        # adjust_delay valida invariantes, sobe max_age se
+                        # preciso, persiste e avisa o player. A malha fechada
+                        # do player reposiciona o playhead em seguida.
+                        try:
+                            new_delay = state.adjust_delay(STEP)
+                            log.info("Delay aumentado para %ss", new_delay)
+                        except Exception as e:
+                            log.warning("Falha ao aumentar delay: %s", e)
                     elif k == '-':
-                        player.set_delay(player.get_delay() - STEP)
-                        config["delay_seconds"] = player.get_delay()
-                        log.info("Delay diminuído para %ss", player.get_delay())
+                        try:
+                            new_delay = state.adjust_delay(-STEP)
+                            log.info("Delay diminuído para %ss", new_delay)
+                        except Exception as e:
+                            log.warning("Falha ao diminuir delay: %s", e)
                     elif k == 'r':
                         try:
                             new_config = load_config()
